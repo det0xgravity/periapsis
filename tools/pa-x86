@@ -19,7 +19,7 @@ pa_x86_arch() {
   case "$d" in
     *ELF*x86-64*)              echo x86_64 ;;
     *ELF*"Intel 80386"*|*ELF*"Intel i386"*) echo i386 ;;
-    *ELF*aarch64*|*ELF*"ARM aarch64"*)      echo aarch64 ;;
+    *ELF*aarch64*)             echo aarch64 ;;
     *) echo other ;;
   esac
 }

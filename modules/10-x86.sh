@@ -34,6 +34,7 @@ mod_x86() {
   for a in amd64 i386; do
     if ! dpkg --print-foreign-architectures | grep -qx "$a"; then
       sudo dpkg --add-architecture "$a" && pa_info "Added dpkg architecture: $a"
+      # shellcheck disable=SC2034  # read by pa_apt_update: re-read the lists for the new arch
       PA_APT_UPDATED=0
     fi
   done
