@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# periapsis — main menu for the Periapsis tools.
+# shellcheck source=../lib/ui.sh
+. "${PA_HOME:-$HOME/.local/share/periapsis}/lib/ui.sh"
+
+export PA_FROM_MAIN=1
+
+while true; do
+  ev=$(pa_cur_event)
+  choice=$(ui_list "Active event: $ev" \
+    "Challenges: add, open, record a flag" \
+    "Events: new, switch, board, writeup  (current: $ev)" \
+    "Open event folder" \
+    "Health check" \
+    "Update Periapsis") || break
+
+  case "$choice" in
+    "Challenges"*)        pa-chal ;;
+    "Events"*)            pa-event ;;
+    "Open event folder")  ui_reveal "$(pa_cur_dir)" ;;
+    "Health check")       t=$(mktemp); pa-doctor > "$t" 2>&1; ui_text "Health check" "$t"; rm -f "$t" ;;
+    "Update Periapsis")   pa-update ;;
+  esac
+done

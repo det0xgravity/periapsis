@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# pa-doctor — checks the Periapsis install and the VM it runs in.
+# Exit status 1 when anything FAILs; warnings don't count.
+# shellcheck source=../lib/ui.sh
+. "${PA_HOME:-$HOME/.local/share/periapsis}/lib/ui.sh"
+
+FAILS=0; WARNS=0
+ok()   { printf '  \033[32mok\033[0m    %s\n' "$1"; }
+warn() { printf '  \033[33mwarn\033[0m  %s\n' "$1"; WARNS=$((WARNS+1)); }
+fail() { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; FAILS=$((FAILS+1)); }
+section() { printf '\n\033[1m%s\033[0m\n' "$1"; }
+
+section "System"
+id=""; ver=""
+# shellcheck disable=SC1091
+[ -r /etc/os-release ] && { . /etc/os-release; id="${ID:-}"; ver="${VERSION:-${VERSION_ID:-}}"; }
+case "$id" in
+  kali|parrot) ok "$id $ver ($(uname -m))" ;;
+  *)           fail "unsupported distribution: ${id:-unknown} (Kali or Parrot)" ;;
+esac
+arch=$(uname -m)
+mem=$(awk '/^MemTotal:/ { printf "%d", $2 / 1048576 }' /proc/meminfo 2>/dev/null)
+if [ -n "$mem" ]; then
+  if [ "$mem" -ge 6 ]; then ok "memory: ${mem} GB"; else warn "memory: ${mem} GB (8 GB is comfortable for Ghidra and Burp)"; fi
+fi
+free=$(df -Pk "$HOME" 2>/dev/null | awk 'NR == 2 { printf "%d", $4 / 1048576 }')
+if [ -n "$free" ]; then
+  if [ "$free" -ge 15 ]; then ok "free disk in \$HOME: ${free} GB"; else warn "free disk in \$HOME: ${free} GB (tool modules need ~15 GB)"; fi
+fi
+
+section "Periapsis"
+inst=$(cat "$PA_HOME/VERSION" 2>/dev/null)
+if [ -n "$inst" ]; then ok "runtime $inst in $PA_HOME"; else fail "runtime not installed (run ./install.sh)"; fi
+repo=$(cat "$PA_CONF/repo_path" 2>/dev/null)
+if [ -n "$repo" ] && [ -x "$repo/install.sh" ]; then ok "checkout: $repo"
+else warn "checkout not found: pa-update won't work"; fi
+case ":$PATH:" in
+  *":$PA_HOME/bin:"*) ok "PATH includes $PA_HOME/bin" ;;
+  *) warn "PATH lacks $PA_HOME/bin: open a new terminal" ;;
+esac
+missing=0
+for c in git curl jq python3 pipx go zenity xclip; do
+  pa_cmd "$c" || { fail "missing command: $c (re-run the installer)"; missing=1; }
+done
+[ $missing = 0 ] && ok "core commands present"
+
+section "Events"
+if [ -d "$PA_DATA/Events" ]; then
+  perm=$(stat -c %a "$PA_DATA/Events" 2>/dev/null)
+  if [ "$perm" = 700 ]; then ok "$PA_DATA/Events is private (700)"; else warn "$PA_DATA/Events is mode $perm, expected 700"; fi
+  n=0
+  for log in "$PA_DATA"/Events/*/audit.log; do
+    [ -f "$log" ] || continue
+    n=$((n+1))
+    pa_event audit-verify "$log" >/dev/null 2>&1 || fail "audit chain broken: $log"
+  done
+  ok "$n event audit log(s) checked"
+else
+  ok "no events yet"
+fi
+ev=$(pa_cur_event)
+if [ -f "$PA_DATA/Events/$ev/event.json" ]; then ok "active event: $ev"; else warn "no active event (pa-event new \"<name>\")"; fi
+
+section "Virtual machine"
+virt=none
+pa_cmd systemd-detect-virt && virt=$(systemd-detect-virt --vm 2>/dev/null || echo none)
+case "$virt" in
+  none) ok "not a VM (or not detected)" ;;
+  kvm|qemu)
+    ok "hypervisor: QEMU (UTM)"
+    if systemctl is-active --quiet qemu-guest-agent 2>/dev/null; then ok "qemu-guest-agent running"
+    else warn "qemu-guest-agent not running (vm module; UTM needs the QEMU agent channel enabled)"; fi
+    if pgrep -x spice-vdagent >/dev/null 2>&1 || pgrep -x spice-vdagentd >/dev/null 2>&1; then ok "SPICE agent running (clipboard, display resize)"
+    else warn "SPICE agent not running: copy/paste with the Mac won't work (vm module, then log out and in)"; fi ;;
+  apple) ok "hypervisor: Apple Virtualization (UTM)" ;;
+  *) ok "hypervisor: $virt" ;;
+esac
+
+if [ "$arch" = aarch64 ]; then
+  section "arm64"
+  if [ -e /proc/sys/fs/binfmt_misc/qemu-x86_64 ]; then ok "x86_64 binaries run through QEMU user emulation"
+  else warn "x86_64 binaries won't run yet (most pwn/rev handouts are x86_64): the x86 module will set this up"; fi
+fi
+
+printf '\n%s fail, %s warn\n' "$FAILS" "$WARNS"
+[ "$FAILS" = 0 ]

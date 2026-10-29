@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# pa-event — create, switch and finish CTF events. With no arguments, a menu.
+#
+#   pa-event new "<name>" [--platform P] [--url U] [--flag-format REGEX]
+#   pa-event use <event>          make it the active event
+#   pa-event list | current | dir
+#   pa-event board                progress by category
+#   pa-event writeup [--flags]    build Writeup.md from the challenge notes
+#   pa-event finish [<event>]
+# shellcheck source=../lib/ui.sh
+. "${PA_HOME:-$HOME/.local/share/periapsis}/lib/ui.sh"
+
+have_event() { [ -f "$PA_DATA/Events/$(pa_slug "$1")/event.json" ]; }
+
+need_active() {
+  have_event "$(pa_cur_event)" && return 0
+  echo "No active event. Create one: pa-event new \"<name>\"" >&2
+  return 1
+}
+
+cli() {
+  local sub="$1" s; shift
+  case "$sub" in
+    new)
+      [ -n "${1:-}" ] || { echo "Usage: pa-event new \"<name>\" [--platform P] [--url U] [--flag-format REGEX]" >&2; return 1; }
+      s=$(pa_event new "$@") || return 1
+      pa_set_event "$s"
+      echo "Active event: $s  ($PA_DATA/Events/$s)" ;;
+    use)
+      have_event "${1:-}" || { echo "No such event: ${1:-} (pa-event list)" >&2; return 1; }
+      pa_set_event "$1"
+      echo "Active event: $(pa_cur_event)" ;;
+    list)    pa_event list ;;
+    current) need_active && pa_cur_event ;;
+    dir)     need_active && pa_cur_dir ;;
+    board)   need_active && pa_event board "$(pa_cur_event)" ;;
+    writeup) need_active && pa_event writeup "$(pa_cur_event)" "$@" ;;
+    finish)  s="${1:-$(pa_cur_event)}"; have_event "$s" || { echo "No such event: $s" >&2; return 1; }
+             pa_event finish "$s" ;;
+    -h|--help|help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' ;;
+    *) echo "Unknown command: $sub (pa-event help)" >&2; return 1 ;;
+  esac
+}
+
+menu_new() {
+  local name fmt plat s
+  name=$(ui_entry "Event name (e.g. picoCTF 2027):") || return 0
+  plat=$(PA_ALLOW_EMPTY=1 ui_entry "Platform (CTFd, picoCTF, HTB…), optional:") || return 0
+  fmt=$(PA_ALLOW_EMPTY=1 ui_entry "Flag format as a regex, optional (e.g. picoCTF\\{.+\\}):") || return 0
+  set -- "$name"
+  [ -n "$plat" ] && set -- "$@" --platform "$plat"
+  [ -n "$fmt" ] && set -- "$@" --flag-format "$fmt"
+  if s=$(pa_event new "$@" 2>&1); then
+    pa_set_event "$s"
+    ui_notify "Active event: $name"
+  else
+    ui_error "$s"
+  fi
+}
+
+menu_switch() {
+  local pick lines
+  lines=$(pa_event list --tsv | awk -F'\t' '{ print $1 "  —  " $2 " (" $3 ")" }')
+  [ -n "$lines" ] || { ui_info "No events yet: create one first."; return 0; }
+  # shellcheck disable=SC2086
+  IFS='
+' ; set -- $lines; unset IFS
+  pick=$(ui_list "Switch to event:" "$@") || return 0
+  pa_set_event "${pick%%  —  *}"
+}
+
+if [ $# -gt 0 ]; then cli "$@"; exit $?; fi
+
+while true; do
+  cur=$(pa_cur_event)
+  choice=$(ui_list "Active event: $cur" \
+    "New event" \
+    "Switch event" \
+    "Progress board" \
+    "Build writeup (no flags)" \
+    "Build writeup with flags" \
+    "Open event folder" \
+    "Finish this event") || break
+  case "$choice" in
+    "New event")      menu_new ;;
+    "Switch event")   menu_switch ;;
+    "Progress board") need_active 2>/dev/null || { ui_info "No active event."; continue; }
+                      t=$(mktemp); pa_event board "$cur" > "$t"; ui_text "Progress" "$t"; rm -f "$t" ;;
+    "Build writeup with flags")
+                      need_active 2>/dev/null && ui_reveal "$(pa_event writeup "$cur" --flags)" ;;
+    "Build writeup"*) need_active 2>/dev/null && ui_reveal "$(pa_event writeup "$cur")" ;;
+    "Open event folder") ui_reveal "$(pa_cur_dir)" ;;
+    "Finish this event")
+      need_active 2>/dev/null && ui_question "Mark $cur as finished?" && pa_event finish "$cur" >/dev/null ;;
+  esac
+done

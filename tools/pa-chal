@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# pa-chal — challenges in the active event. With no arguments, a menu.
+#
+#   pa-chal add <category> "<name>" [--points N] [--url U]   prints its folder
+#   pa-chal list
+#   pa-chal path <challenge>        e.g.  cd "$(pa-chal path baby-rop)"
+#   pa-chal flag <challenge> <flag> [--force]
+#   pa-chal status <challenge> todo|working|solved|skipped
+#
+# <challenge> is category/name, or a name that's unique in the event.
+# shellcheck source=../lib/ui.sh
+. "${PA_HOME:-$HOME/.local/share/periapsis}/lib/ui.sh"
+
+EV=$(pa_cur_event)
+if [ ! -f "$PA_DATA/Events/$EV/event.json" ]; then
+  if [ $# -gt 0 ]; then echo "No active event. Create one: pa-event new \"<name>\"" >&2
+  else ui_info "No active event. Create one in Events first."; fi
+  exit 1
+fi
+
+CATS="web crypto pwn rev forensics stego osint misc network hardware blockchain boot2root"
+
+if [ $# -gt 0 ]; then
+  sub="$1"; shift
+  case "$sub" in
+    add)    pa_event add "$EV" "$@" ;;
+    list)   pa_event chals "$EV" ;;
+    path)   pa_event path "$EV" "$@" ;;
+    flag)   pa_event flag "$EV" "$@" ;;
+    status) pa_event status "$EV" "$@" ;;
+    -h|--help|help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' ;;
+    *) echo "Unknown command: $sub (pa-chal help)" >&2; exit 1 ;;
+  esac
+  exit $?
+fi
+
+# pick_chal "Prompt" -> prints the chosen challenge's id (category/slug)
+pick_chal() {
+  local lines pick
+  lines=$(pa_event chals "$EV" --tsv | awk -F'\t' '{ print $1 "  —  " $2 " [" $3 "]" }')
+  [ -n "$lines" ] || { ui_info "No challenges yet: add one first."; return 1; }
+  # shellcheck disable=SC2086
+  IFS='
+' ; set -- $lines; unset IFS
+  pick=$(ui_list "$1" "$@") || return 1
+  printf '%s\n' "${pick%%  —  *}"
+}
+
+menu_add() {
+  local cat name pts d
+  # shellcheck disable=SC2086
+  cat=$(ui_list "Category:" $CATS) || return 0
+  name=$(ui_entry "Challenge name:") || return 0
+  pts=$(PA_ALLOW_EMPTY=1 ui_entry "Points (optional):") || return 0
+  case "$pts" in ''|*[!0-9]*) pts=0 ;; esac
+  d=$(pa_event add "$EV" "$cat" "$name" --points "$pts") || return 0
+  ui_question "Open the challenge folder? Put the handout files in files/." && ui_reveal "$d"
+}
+
+menu_flag() {
+  local id flag msg rc
+  id=$(pick_chal "Record a flag for:") || return 0
+  flag=$(ui_entry "Flag:") || return 0
+  msg=$(pa_event flag "$EV" "$id" "$flag" 2>&1); rc=$?
+  if [ $rc = 2 ]; then
+    ui_question "$msg
+
+Record it anyway?" || return 0
+    msg=$(pa_event flag "$EV" "$id" "$flag" --force 2>&1); rc=$?
+  fi
+  if [ $rc = 0 ]; then ui_notify "$msg"; else ui_error "$msg"; fi
+}
+
+menu_status() {
+  local id st
+  id=$(pick_chal "Change status of:") || return 0
+  st=$(ui_list "Status:" todo working solved skipped) || return 0
+  pa_event status "$EV" "$id" "$st"
+}
+
+while true; do
+  choice=$(ui_list "Event: $EV" \
+    "Add a challenge" \
+    "Open a challenge folder" \
+    "Record a flag" \
+    "Change a challenge's status") || break
+  case "$choice" in
+    "Add a challenge")         menu_add ;;
+    "Open a challenge folder") id=$(pick_chal "Open:") && ui_reveal "$(pa_event path "$EV" "$id")" ;;
+    "Record a flag")           menu_flag ;;
+    "Change a challenge"*)     menu_status ;;
+  esac
+done

@@ -1,0 +1,45 @@
+name: Lint
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update -q && sudo apt-get install -y -q shellcheck
+
+      - name: shellcheck
+        run: shellcheck -x -S warning install.sh lib/common.sh lib/ui.sh modules/*.sh tools/* tests/run.sh
+
+      - name: Bash syntax
+        run: for f in install.sh lib/*.sh modules/*.sh tools/* tests/run.sh; do bash -n "$f"; done
+
+      - name: Bash 3.2 compatibility scan
+        run: |
+          if grep -nE 'declare -A|local -A|mapfile|readarray|\$\{[A-Za-z_]+(,,|\^\^)|&>>' \
+               install.sh lib/*.sh modules/*.sh tools/*; then
+            echo "::error::Bash 4+ construct found"
+            exit 1
+          fi
+
+      - name: Python
+        run: python3 -m py_compile lib/*.py
+
+      - name: Installer smoke test
+        run: ./install.sh --list
+
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Functional tests
+        run: bash tests/run.sh

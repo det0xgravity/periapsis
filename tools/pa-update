@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# pa-update — pull the latest periapsis and upgrade every installed tool.
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/periapsis"
+repo=$(cat "$CONF/repo_path" 2>/dev/null)
+
+if [ -z "$repo" ] || [ ! -x "$repo/install.sh" ]; then
+  echo "Can't find the periapsis checkout (expected path in $CONF/repo_path)."
+  echo "Clone it again and run ./install.sh from there."
+  exit 1
+fi
+
+pulled=1
+if [ -d "$repo/.git" ]; then
+  echo "Updating periapsis in $repo…"
+  if ! git -C "$repo" pull --ff-only; then
+    pulled=0
+    printf '\n\033[1;31m[!] Could not download the new Periapsis version.\033[0m\n'
+    echo "    Usually this means files in $repo were edited by hand:"
+    git -C "$repo" status --short | sed 's/^/      /'
+    echo "    Discard the edits and update again:"
+    echo "      git -C \"$repo\" stash && pa-update"
+    echo "    Upgrading the installed tools with the current version for now."
+    echo
+  fi
+fi
+
+"$repo/install.sh" --update --yes "$@"
+status=$?
+if [ $pulled = 0 ]; then
+  printf '\n\033[1;31m[!] Periapsis itself was NOT updated — see the message at the top.\033[0m\n'
+  status=1
+fi
+if [ "${PA_FROM_MAIN:-0}" != 1 ] && [ -t 0 ]; then
+  printf '\nPress Enter to close… '; read -r _
+fi
+exit $status

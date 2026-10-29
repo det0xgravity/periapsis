@@ -1,0 +1,10 @@
+# Never commit CTF work (handouts, flags, notes) or personal configuration
+Events/
+*.log
+
+# Editor / OS clutter
+.DS_Store
+*.swp
+.vscode/
+.idea/
+__pycache__/
