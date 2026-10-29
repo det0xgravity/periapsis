@@ -136,9 +136,10 @@ pa_run() {
   return "${PIPESTATUS[0]}"
 }
 
-# pa_pause — keeps a terminal opened by a launcher on screen until Enter
+# pa_pause — keeps a terminal opened by a desktop launcher (PA_LAUNCHER=1) on
+# screen until Enter; from a terminal you opened yourself it does nothing
 pa_pause() {
-  [ "${PA_FROM_MAIN:-0}" = 1 ] && return 0
+  [ "${PA_LAUNCHER:-0}" = 1 ] || return 0
   [ -t 0 ] || return 0
   printf '\nPress Enter to close… '
   read -r _

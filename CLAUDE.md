@@ -69,19 +69,18 @@ bash tests/run.sh          # offline functional tests (also run in CI); passes o
 
 First real install passed on 2026-10-28: Kali 2026.3 arm64, XFCE, in UTM
 (QEMU backend), user `kali`; `core` and `vm` clean, `pa-doctor` 0 fail (the
-VM had ~3 GB RAM, advised to raise to 8 GB). 0.2.0 adds the `x86` module and
-`pa-x86`: **not yet run on the VM**. Parrot is untested. shellcheck runs in CI
+VM had ~3 GB RAM, advised to raise to 8 GB). 0.2.0's `x86` module passed on
+the same VM the same day: `qemu-user-binfmt` path, binfmt for x86_64 and i386,
+multiarch libc, self-test ran a dynamic x86_64 binary; no reboot needed.
+`pa-x86 debug`/`attach` not yet tried by hand. Parrot is untested. shellcheck runs in CI
 only (not installed on the maintainer's Mac).
 
 ## Next steps
 
-1. Run the `x86` module on the VM (`pa-update`); confirm the package names
-   (`qemu-user-binfmt` on Kali's Debian 13 base), binfmt registration and the
-   self-test.
-2. Category modules (web, crypto, pwn, rev, forensics/stego, network), each
+1. Category modules (web, crypto, pwn, rev, forensics/stego, network), each
    checked on arm64.
-3. Clone-safe VM identity and a `pa-seal` step (from True Bearing's vm module).
-4. Later: lab platforms (VPN, per-box notes), OSCP/CEH exam mode (warn on
+2. Clone-safe VM identity and a `pa-seal` step (from True Bearing's vm module).
+3. Later: lab platforms (VPN, per-box notes), OSCP/CEH exam mode (warn on
    restricted tools; the list must be checked against the current exam guide).
 
 ## Publishing

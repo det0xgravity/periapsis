@@ -30,7 +30,8 @@ if [ $pulled = 0 ]; then
   printf '\n\033[1;31m[!] Periapsis itself was NOT updated — see the message at the top.\033[0m\n'
   status=1
 fi
-if [ "${PA_FROM_MAIN:-0}" != 1 ] && [ -t 0 ]; then
+# Only a desktop launcher (PA_LAUNCHER=1) closes its terminal on exit
+if [ "${PA_LAUNCHER:-0}" = 1 ] && [ -t 0 ]; then
   printf '\nPress Enter to close… '; read -r _
 fi
 exit $status
