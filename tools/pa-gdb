@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# pa-gdb — gdb with GEF or pwndbg, for any target architecture.
+#
+#   pa-gdb [--gef|--pwndbg|--plain] [gdb args…]     e.g.  pa-gdb ./chall
+#   pa-gdb [--gef|--pwndbg|--plain] --remote <port> <file>
+#                                    connect to a QEMU gdb stub (pa-x86 debug)
+#   pa-gdb default [gef|pwndbg|plain]  show or set the default front end
+#
+# GEF runs on gdb-multiarch, so it can debug x86 targets on arm64; pwndbg
+# brings its own gdb. Your ~/.gdbinit is left alone.
+# shellcheck source=../lib/ui.sh
+. "${PA_HOME:-$HOME/.local/share/periapsis}/lib/ui.sh"
+
+GEF_PY=/usr/share/gdb/gef.py
+usage() { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; }
+
+front=$(cat "$PA_CONF/gdb" 2>/dev/null); front="${front:-gef}"
+
+case "${1:-}" in
+  default)
+    if [ -n "${2:-}" ]; then
+      case "$2" in gef|pwndbg|plain) ;; *) echo "Front end is gef, pwndbg or plain" >&2; exit 1 ;; esac
+      ( umask 077; mkdir -p "$PA_CONF" ); echo "$2" > "$PA_CONF/gdb"
+    fi
+    cat "$PA_CONF/gdb" 2>/dev/null || echo gef
+    exit 0 ;;
+  -h|--help|help) usage; exit 0 ;;
+esac
+
+case "${1:-}" in
+  --gef|--pwndbg|--plain) front="${1#--}"; shift ;;
+esac
+
+# need_gdb: picks the gdb to run, and falls back to plain gdb rather than
+# failing when the chosen front end isn't installed
+need_gdb() {
+  gdb_bin=gdb-multiarch
+  pa_cmd "$gdb_bin" || gdb_bin=gdb
+  pa_cmd "$gdb_bin" || { echo "gdb isn't installed: ./install.sh --only x86 (or pwn)" >&2; exit 1; }
+  if [ "$front" = gef ] && [ ! -f "$GEF_PY" ]; then echo "GEF isn't installed (pwn module): using plain gdb" >&2; front=plain; fi
+  if [ "$front" = pwndbg ] && ! pa_cmd pwndbg; then echo "pwndbg isn't installed (pwn module): using plain gdb" >&2; front=plain; fi
+}
+
+# gdb's name for the file's architecture, for connecting to a QEMU stub
+gdb_arch() {
+  case "$(file -bL "$1" 2>/dev/null)" in
+    *ELF*x86-64*) echo i386:x86-64 ;;
+    *ELF*"Intel 80386"*|*ELF*"Intel i386"*) echo i386 ;;
+    *ELF*aarch64*) echo aarch64 ;;
+    *) echo auto ;;
+  esac
+}
+
+if [ "${1:-}" = --remote ]; then
+  port="${2:-}"; f="${3:-}"
+  case "$port" in ''|*[!0-9]*) usage >&2; exit 1 ;; esac
+  [ -f "$f" ] || { usage >&2; exit 1; }
+  case "$f" in /*) ;; *) f="$PWD/$f" ;; esac
+  arch=$(gdb_arch "$f")
+  need_gdb
+  case "$front" in
+    gef)    exec "$gdb_bin" -q -ex "source $GEF_PY" -ex "set architecture $arch" -ex "file $f" \
+                 -ex "gef-remote --qemu-user --qemu-binary $f localhost $port" ;;
+    pwndbg) exec pwndbg -q -ex "set architecture $arch" -ex "file $f" -ex "target remote :$port" ;;
+    *)      exec "$gdb_bin" -q -ex "set architecture $arch" -ex "file $f" -ex "target remote :$port" ;;
+  esac
+fi
+
+need_gdb
+case "$front" in
+  gef)    exec "$gdb_bin" -q -ex "source $GEF_PY" "$@" ;;
+  pwndbg) exec pwndbg -q "$@" ;;
+  *)      exec "$gdb_bin" -q "$@" ;;
+esac

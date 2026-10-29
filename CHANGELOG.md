@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.0 — 2026-10-28
+
+- **pwn** module: pwntools (system-wide), GEF, pwndbg (upstream .deb), ROPgadget,
+  ropper, one_gadget and seccomp-tools (gems in Periapsis's own folder),
+  checksec, patchelf, nasm, pwninit (compiled with cargo on arm64, where
+  upstream has no binary).
+- **rev** module: Ghidra, radare2, Rizin and Cutter, ImHex, ltrace, strace,
+  valgrind, elfutils, UPX, binwalk, jadx, apktool, pyinstxtractor, pycdc/pycdas
+  (compiled from source), Z3.
+- `pa-gdb`: gdb-multiarch with GEF, or pwndbg, or plain gdb; `--remote` connects
+  to a QEMU gdb stub the right way for each (GEF uses `gef-remote --qemu-user`).
+  `pa-x86 attach` and native `pa-x86 debug` use it.
+- GitHub release downloads are verified against GitHub's recorded SHA-256
+  digest as well as any checksums file, and refused when neither exists.
+  New helpers: `pa_gh_deb`, `pa_gem`, `pa_cargo`.
+- `pa-doctor` checks the pwn and rev tools (unless those modules were skipped).
+- `pa-update`: no "Press Enter" prompt when run from a terminal.
+
 ## 0.2.0 — 2026-10-28
 
 - **x86** module (arm64 only): QEMU user emulation registered with binfmt, so

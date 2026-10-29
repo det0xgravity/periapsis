@@ -89,5 +89,21 @@ if [ "$arch" = aarch64 ]; then
   pa_cmd gdb-multiarch && ok "gdb-multiarch (pa-x86 debug / attach)" || warn "gdb-multiarch missing (x86 module)"
 fi
 
+# Tool modules: checked unless the module was skipped at install
+skipped=",$(cat "$PA_CONF/skipped" 2>/dev/null),"
+tools_check() {   # tools_check <module> <command>...
+  local m="$1" c miss=""; shift
+  case "$skipped" in *",$m,"*) return 0 ;; esac
+  for c in "$@"; do pa_cmd "$c" || miss="$miss $c"; done
+  if [ -z "$miss" ]; then ok "$m: $*"; else warn "$m: missing$miss (./install.sh --only $m)"; fi
+}
+section "Tool modules"
+tools_check pwn pwn ROPgadget ropper checksec patchelf one_gadget seccomp-tools pwninit pwndbg
+if case "$skipped" in *",pwn,"*) false ;; *) true ;; esac; then
+  if python3 -c 'import pwn' >/dev/null 2>&1; then ok "pwn: python3 imports pwntools"; else warn "pwn: python3 can't import pwntools"; fi
+  [ -f /usr/share/gdb/gef.py ] && ok "pwn: GEF (pa-gdb default: $(pa-gdb default 2>/dev/null))" || warn "pwn: GEF missing"
+fi
+tools_check rev ghidra r2 rizin cutter imhex ltrace strace upx-ucl binwalk jadx apktool pyinstxtractor pycdc
+
 printf '\n%s fail, %s warn\n' "$FAILS" "$WARNS"
 [ "$FAILS" = 0 ]

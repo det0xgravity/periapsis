@@ -102,5 +102,24 @@ check "a non-ELF file is refused" "! pa-x86 check '$W/notes.txt' > /dev/null 2>&
 check "run refuses a file without +x" "pa-x86 run '$W/chall64' 2>&1 | grep -q 'chmod +x'"
 check "unknown subcommand fails" "! pa-x86 frobnicate 2>/dev/null"
 
+section "pa-gdb"
+check "default front end is gef" "[ \"\$(pa-gdb default)\" = gef ]"
+check "default can be changed" "[ \"\$(pa-gdb default pwndbg)\" = pwndbg ] && [ \"\$(pa-gdb default)\" = pwndbg ]"
+check "an unknown front end is refused" "! pa-gdb default lldb 2>/dev/null"
+pa-gdb default gef > /dev/null
+check "--remote needs a numeric port" "pa-gdb --remote abc '$W/chall64' 2>&1 | grep -q 'remote <port>'"
+check "--remote needs an existing file" "pa-gdb --remote 1234 '$W/nope' 2>&1 | grep -q 'remote <port>'"
+
+section "Release downloads (verified)"
+# GitHub release JSON pointing at local files: the digest must match before install
+echo payload > "$W/asset.bin"
+good=$(sha256sum "$W/asset.bin" 2>/dev/null | cut -d' ' -f1); [ -n "$good" ] || good=$(shasum -a 256 "$W/asset.bin" | cut -d' ' -f1)
+rel() { printf '{"tag_name":"1.0","assets":[{"name":"asset.bin","browser_download_url":"file://%s","digest":"%s"}]}' "$W/asset.bin" "$1"; }
+gh_asset() { ( . "$R/lib/common.sh"; pa_gh_asset "$1" '^asset\.bin$' "$2" test ) > /dev/null 2>&1; }
+check "asset with a matching digest is kept" "gh_asset '$(rel "sha256:$good")' '$W/dl1' && cmp -s '$W/asset.bin' '$W/dl1'"
+check "asset with a wrong digest is refused and removed" "! gh_asset '$(rel "sha256:$(printf '0%.0s' $(seq 64))")' '$W/dl2' && [ ! -e '$W/dl2' ]"
+check "asset with no checksum at all is refused" "! gh_asset '$(rel "")' '$W/dl3' && [ ! -e '$W/dl3' ]"
+check "no matching asset (no build for this arch) fails" "! ( . '$R/lib/common.sh'; pa_gh_asset '$(rel "sha256:$good")' 'arm64\\.deb$' '$W/dl4' test ) > /dev/null 2>&1"
+
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" = 0 ]

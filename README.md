@@ -29,7 +29,7 @@ forensics…) are added one at a time, each marked for the architectures it supp
 | Parrot OS (Security), arm64 in UTM | Supported |
 | Kali / Parrot amd64 | Supported |
 
-Setting up the VM: [docs/UTM.md](docs/UTM.md).
+Setting up the VM: [docs/UTM.md](docs/UTM.md). The pwn and rev tools, and debugging x86 binaries on arm64: [docs/PWN-REV.md](docs/PWN-REV.md).
 
 ## Quick start
 
@@ -59,6 +59,8 @@ Or run `periapsis` for the point-and-click menu.
 |---|---|
 | `core` | Base packages, pipx, Go, the Periapsis runtime and menus *(always installed)* |
 | `x86` | *(arm64 only)* QEMU user emulation via binfmt so x86_64/i386 handouts run, multiarch x86 C libraries, gdb-multiarch, x86 binutils and gcc, and `pa-x86` (check / run / debug / attach) |
+| `pwn` | pwntools, GEF and pwndbg (`pa-gdb`), ROPgadget, ropper, one_gadget, seccomp-tools, checksec, patchelf, pwninit |
+| `rev` | Ghidra, radare2, Rizin and Cutter, ImHex, ltrace/strace, UPX, binwalk, jadx, apktool, pyinstxtractor, pycdc, Z3 |
 | `vm` | QEMU guest agent and SPICE agent (UTM clipboard, display resize), open-vm-tools on VMware, UTM shared folder at `~/utm-share` |
 
 ```bash
@@ -100,7 +102,7 @@ left out unless you pass `--flags`, and flags are never written to `audit.log`.
 
 ## Roadmap
 
-1. Tool modules by category (pwn, rev, web, crypto, forensics/stego, network).
+1. More tool modules: web, crypto, forensics/stego, network.
 2. Lab platforms (HTB, TryHackMe, OffSec Proving Grounds): VPN handling, a per-box target and notes.
 3. Certification prep (OSCP, CEH): an **exam mode** that warns before tools the exam rules restrict, from a list you check against the current exam guide.
 

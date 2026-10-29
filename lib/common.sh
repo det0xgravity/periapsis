@@ -5,7 +5,7 @@
 #  Sourced by install.sh and every module. Bash 3.2 compatible.
 # =============================================================================
 
-PA_VERSION="0.2.0"
+PA_VERSION="0.3.0"
 
 PA_HOME="${PA_HOME:-$HOME/.local/share/periapsis}"   # tools, venvs, sources
 PA_BIN="$PA_HOME/bin"                                # all Periapsis binaries
@@ -291,29 +291,48 @@ pa_go() {
 }
 
 # --- GitHub release binaries ---------------------------------------------------------
-# pa_gh_release <owner/repo> <binary-name> <asset-regex>
-# Downloads the newest release asset matching the regex and installs the binary.
-# When the release publishes a checksums file, the download must match it.
-# Callers pick the regex per arch: pa_is_arm64 && rx='linux.*(arm64|aarch64)'.
-pa_gh_release() {
-  local repo="$1" bin="$2" rx="$3" json url sums tmp f name want
-  if [ "$PA_UPDATE" != 1 ] && [ -x "$PA_BIN/$bin" ]; then pa_info "$bin ✓"; return 0; fi
-  json=$(curl -fsSL ${GITHUB_TOKEN:+-H "Authorization: Bearer $GITHUB_TOKEN"} \
-         "https://api.github.com/repos/$repo/releases/latest") || { pa_warn "$bin: GitHub API unavailable (rate limit?)"; return 1; }
+# pa_gh_json <owner/repo>   the latest release's JSON (sets nothing; prints it)
+pa_gh_json() {
+  curl -fsSL ${GITHUB_TOKEN:+-H "Authorization: Bearer $GITHUB_TOKEN"} \
+    "https://api.github.com/repos/$1/releases/latest"
+}
+
+# pa_gh_asset <release-json> <asset-regex> <dest-file> <label>
+# Downloads the first matching asset and verifies it: against the SHA-256
+# digest GitHub records for the asset, and against the release's checksums
+# file when it has one. With neither, it isn't installed. Sets PA_GH_NAME.
+PA_GH_NAME=""
+pa_gh_asset() {
+  local json="$1" rx="$2" dest="$3" label="$4" url sums digest want have
   url=$(printf '%s' "$json" | jq -r --arg rx "$rx" '.assets[] | select(.name | test($rx; "i")) | .browser_download_url' | head -1)
+  [ -n "$url" ] || { pa_warn "$label: no release asset matched /$rx/ (no $PA_ARCH build?)"; return 1; }
+  PA_GH_NAME=${url##*/}
+  digest=$(printf '%s' "$json" | jq -r --arg n "$PA_GH_NAME" '.assets[] | select(.name == $n) | .digest // empty' | sed -n 's/^sha256://p')
   sums=$(printf '%s' "$json" | jq -r '.assets[] | select(.name | test("(checksums?|sha256sums?)(\\.txt)?$"; "i")) | .browser_download_url' | head -1)
-  [ -n "$url" ] || { pa_warn "$bin: no release asset matched /$rx/ (no $PA_ARCH build?)"; return 1; }
-  tmp=$(mktemp -d)
-  pa_download "$url" "$tmp/asset" "download: $bin" || { rm -rf "$tmp"; return 1; }
+  [ -n "$digest" ] || [ -n "$sums" ] || { pa_warn "$label: release has no checksum to verify against — not installed"; return 1; }
+  pa_download "$url" "$dest" "download: $label" || return 1
+  have=$(pa_sha256 "$dest")
+  if [ -n "$digest" ] && [ "$have" != "$digest" ]; then
+    pa_warn "$label: download doesn't match GitHub's recorded digest — not installed"; rm -f "$dest"; return 1
+  fi
   if [ -n "$sums" ]; then
-    name=${url##*/}
-    want=$(curl -fsSL "$sums" | awk -v n="$name" '{ f=$2; sub(/^\*/, "", f) } f == n { print $1; exit }')
-    if [ -z "$want" ] || [ "$(pa_sha256 "$tmp/asset")" != "$want" ]; then
-      pa_warn "$bin: download doesn't match the release's published checksum — not installed"
-      rm -rf "$tmp"; return 1
+    want=$(curl -fsSL "$sums" | awk -v n="$PA_GH_NAME" '{ f=$2; sub(/^\*/, "", f) } f == n { print $1; exit }')
+    if [ -z "$want" ] || [ "$have" != "$want" ]; then
+      pa_warn "$label: download doesn't match the release's checksums file — not installed"; rm -f "$dest"; return 1
     fi
   fi
-  case "$url" in
+}
+
+# pa_gh_release <owner/repo> <binary-name> <asset-regex>
+# Installs the binary from the newest release asset matching the regex.
+# Callers pick the regex per arch: pa_is_arm64 && rx='linux.*(arm64|aarch64)'.
+pa_gh_release() {
+  local repo="$1" bin="$2" rx="$3" json tmp f
+  if [ "$PA_UPDATE" != 1 ] && [ -x "$PA_BIN/$bin" ]; then pa_info "$bin ✓"; return 0; fi
+  json=$(pa_gh_json "$repo") || { pa_warn "$bin: GitHub API unavailable (rate limit?)"; return 1; }
+  tmp=$(mktemp -d)
+  pa_gh_asset "$json" "$rx" "$tmp/asset" "$bin" || { rm -rf "$tmp"; return 1; }
+  case "$PA_GH_NAME" in
     *.zip)            (cd "$tmp" && unzip -q asset) ;;
     *.tar.gz|*.tgz)   tar -C "$tmp" -xzf "$tmp/asset" ;;
     *)                mv "$tmp/asset" "$tmp/$bin" ;;
@@ -323,6 +342,65 @@ pa_gh_release() {
   install -m 755 "$f" "$PA_BIN/$bin"
   rm -rf "$tmp"
   pa_info "$bin installed"
+}
+
+# pa_gh_deb <owner/repo> <package> <asset-regex>
+# Installs a .deb from the newest release (verified by pa_gh_asset) through
+# apt, so its dependencies come along. Skipped when that version is installed.
+pa_gh_deb() {
+  local repo="$1" pkg="$2" rx="$3" json tag have tmp
+  json=$(pa_gh_json "$repo") || { pa_warn "$pkg: GitHub API unavailable (rate limit?)"; return 1; }
+  tag=$(printf '%s' "$json" | jq -r '.tag_name' | sed 's/^v//')
+  have=$(dpkg-query -W -f '${Version}' "$pkg" 2>/dev/null)
+  case "$have" in
+    "$tag"|"$tag"-*) pa_info "$pkg $have ✓"; return 0 ;;
+  esac
+  [ -n "$have" ] && [ "$PA_UPDATE" != 1 ] && { pa_info "$pkg $have ✓ (update available: $tag)"; return 0; }
+  tmp=$(mktemp -d)
+  chmod 755 "$tmp"     # apt's _apt user reads the file
+  pa_gh_asset "$json" "$rx" "$tmp/$pkg.deb" "$pkg" || { rm -rf "$tmp"; return 1; }
+  pa_apt_update || { rm -rf "$tmp"; return 1; }
+  pa_bg "${PA_LOG:-/dev/null}" "apt: $pkg $tag" sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q "$tmp/$pkg.deb" \
+    || { pa_warn "$pkg: install failed"; rm -rf "$tmp"; return 1; }
+  rm -rf "$tmp"
+  pa_info "$pkg $tag installed"
+}
+
+# --- Ruby gems ---------------------------------------------------------------------------
+# pa_gem <gem> <command>...   Installs a gem into $PA_HOME/gems (not system Ruby)
+# and writes a wrapper per command into $PA_BIN.
+PA_GEMS="$PA_HOME/gems"
+pa_gem() {
+  local gem="$1" c log; shift
+  pa_has gem || { pa_warn "$gem: Ruby isn't installed"; return 1; }
+  if [ "$PA_UPDATE" = 1 ] || ! GEM_HOME="$PA_GEMS" gem list -i "^$gem\$" >/dev/null 2>&1; then
+    log=$(mktemp)
+    if ! pa_bg "$log" "gem: $gem" env GEM_HOME="$PA_GEMS" gem install --no-document "$gem"; then
+      pa_warn "gem install failed: $gem"; pa_show_tail "$log"; rm -f "$log"; return 1
+    fi
+    rm -f "$log"
+  fi
+  mkdir -p "$PA_BIN"
+  for c in "$@"; do
+    printf '#!/bin/sh\n# Periapsis wrapper for %s (gem %s)\nGEM_HOME="%s" GEM_PATH="%s" exec "%s/bin/%s" "$@"\n' \
+      "$c" "$gem" "$PA_GEMS" "$PA_GEMS" "$PA_GEMS" "$c" > "$PA_BIN/$c"
+    chmod 755 "$PA_BIN/$c"
+  done
+  pa_info "$gem ✓"
+}
+
+# --- Rust crates -------------------------------------------------------------------------
+# pa_cargo <crate> <binary>   cargo install into $PA_HOME (binary lands in $PA_BIN)
+pa_cargo() {
+  local crate="$1" bin="$2" log
+  if [ "$PA_UPDATE" != 1 ] && [ -x "$PA_BIN/$bin" ]; then pa_info "$bin ✓"; return 0; fi
+  pa_has cargo || { pa_warn "$crate: cargo isn't installed"; return 1; }
+  log=$(mktemp)
+  if pa_bg "$log" "cargo: $crate (compiling)" cargo install --locked --root "$PA_HOME" "$crate"; then
+    pa_info "$bin installed"; rm -f "$log"
+  else
+    pa_warn "cargo install failed: $crate"; pa_show_tail "$log"; rm -f "$log"; return 1
+  fi
 }
 
 # --- shell PATH ------------------------------------------------------------------------

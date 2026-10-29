@@ -21,7 +21,9 @@ paid products, and don't add references to them.
   (`--list` works before platform detection, so it runs anywhere), detects the
   platform, runs the selected modules through `pa_step`.
 - `lib/common.sh`: installer helpers (`pa_apt`, `pa_apt_has`, `pa_pipx`,
-  `pa_go`, `pa_go_ensure`, `pa_git_venv`, `pa_gh_release`, `pa_register`,
+  `pa_go`, `pa_go_ensure`, `pa_git_venv`, `pa_gh_release`, `pa_gh_deb`,
+  `pa_gh_asset` (verifies GitHub's asset digest and/or a checksums file;
+  refuses unverifiable downloads), `pa_gem`, `pa_cargo`, `pa_register`,
   platform detection: `PA_PLATFORM` kali|parrot, `PA_ARCH` amd64|arm64).
 - `lib/ui.sh`: runtime library for the menu tools (`ui_*` zenity dialogs,
   `pa_cur_event`/`pa_cur_dir`, `pa_audit`, `pa_run`, scripted dialogs for tests).
@@ -33,6 +35,8 @@ paid products, and don't add references to them.
   module really works on.
 - `tools/`: menu/CLI tools installed to `~/.local/share/periapsis/bin` and
   linked into `~/.local/bin`.
+- `tools/pa-gdb`: the one place that knows how to start gdb with GEF/pwndbg
+  and attach to a QEMU stub; other tools call it rather than gdb directly.
 - `docs/`: user documentation. Keep it in sync with behaviour changes.
 
 ## Hard rules
@@ -75,12 +79,23 @@ multiarch libc, self-test ran a dynamic x86_64 binary; no reboot needed.
 `pa-x86 debug`/`attach` not yet tried by hand. Parrot is untested. shellcheck runs in CI
 only (not installed on the maintainer's Mac).
 
+0.3.0 adds `pwn` and `rev`: every apt package and its dependencies were
+checked against Kali rolling's arm64 index (Oct 2026); **not yet installed on
+the VM**. Untested by hand: pwndbg's gdb on an x86 target under QEMU,
+pwntools `gdb.debug()` on arm64, the cargo build of pwninit.
+
+To check a package for arm64 without the VM, search Kali's index:
+`https://http.kali.org/kali/dists/kali-rolling/main/binary-arm64/Packages.gz`
+(and `Contents-arm64.gz` for the commands a package installs).
+
 ## Next steps
 
-1. Category modules (web, crypto, pwn, rev, forensics/stego, network), each
+1. Install `pwn` and `rev` on the VM; try a real x86_64 pwn challenge end to
+   end (pwninit, pwntools, `pa-x86 debug`/`attach` with GEF and pwndbg).
+2. More category modules (web, crypto, forensics/stego, network), each
    checked on arm64.
-2. Clone-safe VM identity and a `pa-seal` step (from True Bearing's vm module).
-3. Later: lab platforms (VPN, per-box notes), OSCP/CEH exam mode (warn on
+3. Clone-safe VM identity and a `pa-seal` step (from True Bearing's vm module).
+4. Later: lab platforms (VPN, per-box notes), OSCP/CEH exam mode (warn on
    restricted tools; the list must be checked against the current exam guide).
 
 ## Publishing
