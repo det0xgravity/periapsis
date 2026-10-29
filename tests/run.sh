@@ -91,5 +91,16 @@ menu pa-event "Switch event" "test-ctf-2027"
 check "menu switches events" "[ \"\$(pa-event current)\" = test-ctf-2027 ]"
 check "pa-chal without an event fails cleanly" "echo nope > '$XDG_CONFIG_HOME/periapsis/active_event' && ! pa-chal list 2>/dev/null"
 
+section "pa-x86"
+# Minimal ELF headers: enough for file(1) to name the machine (0x3e x86-64, 0x03 i386)
+elf64() { printf '\177ELF\002\001\001\000\000\000\000\000\000\000\000\000\002\000\076\000\001\000\000\000' > "$1"; head -c 40 /dev/zero >> "$1"; }
+elf32() { printf '\177ELF\001\001\001\000\000\000\000\000\000\000\000\000\002\000\003\000\001\000\000\000' > "$1"; head -c 28 /dev/zero >> "$1"; }
+elf64 "$W/chall64"; elf32 "$W/chall32"; echo 'not a binary' > "$W/notes.txt"
+check "x86_64 handout recognised" "pa-x86 check '$W/chall64' 2>&1 | grep -q 'x86-64'"
+check "i386 handout recognised" "pa-x86 check '$W/chall32' 2>&1 | grep -q '80386'"
+check "a non-ELF file is refused" "! pa-x86 check '$W/notes.txt' > /dev/null 2>&1"
+check "run refuses a file without +x" "pa-x86 run '$W/chall64' 2>&1 | grep -q 'chmod +x'"
+check "unknown subcommand fails" "! pa-x86 frobnicate 2>/dev/null"
+
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" = 0 ]

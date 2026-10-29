@@ -78,8 +78,15 @@ esac
 
 if [ "$arch" = aarch64 ]; then
   section "arm64"
-  if [ -e /proc/sys/fs/binfmt_misc/qemu-x86_64 ]; then ok "x86_64 binaries run through QEMU user emulation"
-  else warn "x86_64 binaries won't run yet (most pwn/rev handouts are x86_64): the x86 module will set this up"; fi
+  for a in x86_64 i386; do
+    if [ -e "/proc/sys/fs/binfmt_misc/qemu-$a" ]; then ok "$a binaries run through QEMU user emulation"
+    else warn "$a binaries won't run (most pwn/rev handouts are x86): ./install.sh --only x86"; fi
+  done
+  if [ -e /lib64/ld-linux-x86-64.so.2 ]; then ok "x86_64 C library present (dynamically linked binaries)"
+  else warn "no x86_64 C library: dynamically linked x86_64 binaries won't start (x86 module)"; fi
+  if [ -e /lib/ld-linux.so.2 ]; then ok "i386 C library present"
+  else warn "no i386 C library: 32-bit binaries won't start (x86 module)"; fi
+  pa_cmd gdb-multiarch && ok "gdb-multiarch (pa-x86 debug / attach)" || warn "gdb-multiarch missing (x86 module)"
 fi
 
 printf '\n%s fail, %s warn\n' "$FAILS" "$WARNS"

@@ -58,6 +58,7 @@ Or run `periapsis` for the point-and-click menu.
 | Module | What it adds |
 |---|---|
 | `core` | Base packages, pipx, Go, the Periapsis runtime and menus *(always installed)* |
+| `x86` | *(arm64 only)* QEMU user emulation via binfmt so x86_64/i386 handouts run, multiarch x86 C libraries, gdb-multiarch, x86 binutils and gcc, and `pa-x86` (check / run / debug / attach) |
 | `vm` | QEMU guest agent and SPICE agent (UTM clipboard, display resize), open-vm-tools on VMware, UTM shared folder at `~/utm-share` |
 
 ```bash
@@ -99,7 +100,7 @@ left out unless you pass `--flags`, and flags are never written to `audit.log`.
 
 ## Roadmap
 
-1. Tool modules by category, starting with the `x86` layer (running x86_64 handouts on arm64).
+1. Tool modules by category (pwn, rev, web, crypto, forensics/stego, network).
 2. Lab platforms (HTB, TryHackMe, OffSec Proving Grounds): VPN handling, a per-box target and notes.
 3. Certification prep (OSCP, CEH): an **exam mode** that warns before tools the exam rules restrict, from a list you check against the current exam guide.
 

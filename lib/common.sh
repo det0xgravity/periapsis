@@ -5,7 +5,7 @@
 #  Sourced by install.sh and every module. Bash 3.2 compatible.
 # =============================================================================
 
-PA_VERSION="0.1.0"
+PA_VERSION="0.2.0"
 
 PA_HOME="${PA_HOME:-$HOME/.local/share/periapsis}"   # tools, venvs, sources
 PA_BIN="$PA_HOME/bin"                                # all Periapsis binaries

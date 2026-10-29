@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# pa-x86 — x86 challenge binaries on an arm64 VM (and natively on amd64).
+#
+#   pa-x86 check <file>             architecture, linking, and whether it runs here
+#   pa-x86 run <file> [args…]       run it (through QEMU user emulation on arm64)
+#   pa-x86 debug <file> [args…]     start it under QEMU's gdb stub, waiting for gdb
+#   pa-x86 attach <file>            connect gdb-multiarch to it (from a second terminal)
+#
+# PA_GDB_PORT sets the debug port (default 1234). Runs inside an event are logged.
+# shellcheck source=../lib/ui.sh
+. "${PA_HOME:-$HOME/.local/share/periapsis}/lib/ui.sh"
+
+usage() { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; }
+
+# pa_x86_arch <file>  -> x86_64 | i386 | aarch64 | other
+pa_x86_arch() {
+  local d
+  d=$(file -bL "$1" 2>/dev/null)
+  case "$d" in
+    *ELF*x86-64*)              echo x86_64 ;;
+    *ELF*"Intel 80386"*|*ELF*"Intel i386"*) echo i386 ;;
+    *ELF*aarch64*|*ELF*"ARM aarch64"*)      echo aarch64 ;;
+    *) echo other ;;
+  esac
+}
+
+host=$(uname -m)
+
+# native <arch>: true when the CPU runs it without emulation
+native() {
+  case "$host:$1" in
+    x86_64:x86_64|x86_64:i386|aarch64:aarch64) return 0 ;;
+  esac
+  return 1
+}
+
+log() {
+  [ -f "$PA_DATA/Events/$(pa_cur_event)/event.json" ] && pa_audit pa-x86 "$(basename "$1")" "$2"
+  return 0
+}
+
+sub="${1:-}"; [ $# -gt 0 ] && shift
+case "$sub" in
+  check)
+    f="${1:-}"; [ -f "$f" ] || { usage >&2; exit 1; }
+    arch=$(pa_x86_arch "$f")
+    printf '%s\n' "$(file -bL "$f")"
+    case "$arch" in
+      other)   echo "Not an x86 or arm64 Linux ELF binary."; exit 1 ;;
+    esac
+    if native "$arch"; then echo "Runs natively on this $host machine."
+    elif [ -e "/proc/sys/fs/binfmt_misc/qemu-$arch" ]; then echo "Runs through QEMU user emulation (qemu-$arch)."
+    else echo "Can't run here: qemu-$arch isn't registered. Install the x86 module: ./install.sh --only x86"; exit 1; fi
+    if file -bL "$f" | grep -q 'dynamically linked'; then
+      case "$arch" in
+        x86_64) [ -e /lib64/ld-linux-x86-64.so.2 ] || echo "Missing the x86_64 loader (libc6:amd64): install the x86 module." ;;
+        i386)   [ -e /lib/ld-linux.so.2 ] || echo "Missing the i386 loader (libc6:i386): install the x86 module." ;;
+      esac
+      echo "Dynamically linked: if the challenge ships its own libc, run it with that libc (pwninit or patchelf)."
+    fi ;;
+  run)
+    f="${1:-}"; [ -f "$f" ] || { usage >&2; exit 1; }
+    shift
+    arch=$(pa_x86_arch "$f")
+    log "$f" "run $*"
+    case "$f" in */*) ;; *) f="./$f" ;; esac
+    [ -x "$f" ] || { echo "$f isn't executable (handouts often arrive without +x): chmod +x \"$f\"" >&2; exit 1; }
+    if native "$arch" || [ -e "/proc/sys/fs/binfmt_misc/qemu-$arch" ]; then exec "$f" "$@"; fi
+    pa_cmd "qemu-$arch" || { echo "qemu-$arch not installed: ./install.sh --only x86" >&2; exit 1; }
+    exec "qemu-$arch" "$f" "$@" ;;
+  debug)
+    f="${1:-}"; [ -f "$f" ] || { usage >&2; exit 1; }
+    shift
+    arch=$(pa_x86_arch "$f")
+    port="${PA_GDB_PORT:-1234}"
+    case "$f" in */*) ;; *) f="./$f" ;; esac
+    if native "$arch"; then
+      pa_cmd gdb-multiarch || { echo "gdb-multiarch not installed: ./install.sh --only x86" >&2; exit 1; }
+      log "$f" "debug (native gdb) $*"
+      exec gdb-multiarch -q --args "$f" "$@"
+    fi
+    pa_cmd "qemu-$arch" || { echo "qemu-$arch not installed: ./install.sh --only x86" >&2; exit 1; }
+    log "$f" "debug qemu-$arch -g $port $*"
+    # The program keeps this terminal for its input and output, and waits for gdb
+    printf 'Waiting for gdb on port %s. In another terminal:\n  pa-x86 attach %s\n\n' "$port" "$f" >&2
+    exec "qemu-$arch" -g "$port" "$f" "$@" ;;
+  attach)
+    f="${1:-}"; [ -f "$f" ] || { usage >&2; exit 1; }
+    port="${PA_GDB_PORT:-1234}"
+    pa_cmd gdb-multiarch || { echo "gdb-multiarch not installed: ./install.sh --only x86" >&2; exit 1; }
+    case "$(pa_x86_arch "$f")" in x86_64) garch="i386:x86-64" ;; i386) garch="i386" ;; *) garch="auto" ;; esac
+    exec gdb-multiarch -q -ex "set architecture $garch" -ex "file $f" -ex "target remote :$port" ;;
+  -h|--help|help|"") usage ;;
+  *) echo "Unknown command: $sub (pa-x86 help)" >&2; exit 1 ;;
+esac

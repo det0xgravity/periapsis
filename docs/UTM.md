@@ -50,7 +50,32 @@ Then open a new terminal and run `pa-doctor`.
 
 ## arm64 and x86_64 challenges
 
-Most `pwn` and `rev` handout binaries are built for x86_64, and an arm64 VM
-can't run them natively. A future `x86` module will set up QEMU user
-emulation so `./chall` runs, with multi-architecture debugging. Until then,
-`pa-doctor` reports whether x86_64 emulation is available.
+Most `pwn` and `rev` handout binaries are built for x86_64 (some for 32-bit
+i386), and an arm64 VM can't run them natively. The `x86` module (arm64 only)
+sets up:
+
+- **QEMU user emulation** registered with binfmt_misc, so `./chall` just runs.
+- **x86 C libraries** (`libc6:amd64`, `libc6:i386`, via dpkg multiarch), so
+  dynamically linked binaries find their loader.
+- **gdb-multiarch**, x86_64 binutils (`x86_64-linux-gnu-objdump`) and gcc
+  (`x86_64-linux-gnu-gcc`).
+
+It ends with a self-test: it builds a small dynamically linked x86_64 program
+and runs it.
+
+```bash
+pa-x86 check ./chall          # architecture, linking, whether it runs here
+pa-x86 run ./chall            # same as ./chall once binfmt is set up
+pa-x86 debug ./chall          # starts it under QEMU's gdb stub, waiting…
+pa-x86 attach ./chall         # …then in a second terminal: gdb connected to it
+```
+
+Things to know:
+
+- Emulation is much slower than native, which can matter for brute-force or
+  timing challenges.
+- If a challenge ships its own `libc.so.6` and loader, run the binary against
+  them (e.g. with `patchelf`), not the VM's libc. Offsets in exploits depend on it.
+- Under QEMU, gdb sees the emulated program's memory and registers, but
+  `info proc mappings` and similar commands that read `/proc` don't work the
+  same way.
